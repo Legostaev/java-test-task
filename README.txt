@@ -1,3 +1,20 @@
+You need to configure the HTTPS for the server
+
+You should be create a keystore
+
+keytool -genkey -alias tomcat -keyalg RSA -keystore mystore -validity 999 -keysize 512
+
+and then configure server.xml
+example:
+
+<Connector port="8443" SSLEnabled="true" maxHttpHeaderSize="8192" 
+        maxThreads="150" minSpareThreads="25" maxSpareThreads="200"
+        enableLookups="false" disableUploadTimeout="true"         
+        acceptCount="100" scheme="https" secure="true"
+        clientAuth="false" sslProtocol="TLS"
+        keystoreFile="mystore" keystorePass="mystorepassword" keystoreType="JKS"
+        keyAlias="tomcat"/>
+
 The program uses the apache derby database and stores the data in RAM. You can change this behavior by changing the data source.
 
 <!-- this is the JDBC data source which uses an in-memory only Apache Derby database -->
