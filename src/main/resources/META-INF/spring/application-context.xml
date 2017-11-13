@@ -1,0 +1,167 @@
+<?xml version="1.0" encoding="UTF-8" ?>
+<beans xmlns="http://www.springframework.org/schema/beans"
+    xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+    xmlns:sec="http://www.springframework.org/schema/security" 
+    xmlns:mvc="http://www.springframework.org/schema/mvc"
+    xmlns:context="http://www.springframework.org/schema/context"
+    xmlns:oauth="http://www.springframework.org/schema/security/oauth2"
+    xsi:schemaLocation="http://www.springframework.org/schema/security/oauth2 http://www.springframework.org/schema/security/spring-security-oauth2-1.0.xsd
+        http://www.springframework.org/schema/mvc http://www.springframework.org/schema/mvc/spring-mvc-3.2.xsd
+        http://www.springframework.org/schema/security http://www.springframework.org/schema/security/spring-security-3.2.xsd
+        http://www.springframework.org/schema/beans http://www.springframework.org/schema/beans/spring-beans-4.0.xsd 
+        http://www.springframework.org/schema/context http://www.springframework.org/schema/context/spring-context-4.0.xsd">
+ 
+    <!-- this is the JDBC data source which uses an in-memory only Apache Derby database -->
+    <bean id="dataSource" class="org.apache.commons.dbcp.BasicDataSource" destroy-method="close">
+        <property name="driverClassName" value="org.apache.derby.jdbc.EmbeddedDriver"/>
+        <property name="url" value="jdbc:derby:memory:security;create=true"/>
+        <property name="username" value=""/>
+        <property name="password" value=""/>
+    </bean>
+    
+    <!-- setup Hibernate session factory -->
+    <bean id="sessionFactory" class="org.springframework.orm.hibernate4.LocalSessionFactoryBean">
+        <property name="dataSource" ref="dataSource"/>
+        <!-- here we define the hibernate mapping files we use -->  
+        <property name="mappingResources">
+              <list>
+                  <value>client.hbm.xml</value>
+              </list>
+        </property>
+        <property name="hibernateProperties">
+              <value>
+                  hibernate.dialect=org.hibernate.dialect.DerbyTenSevenDialect
+                  hibernate.hbm2ddl.auto=create
+                  hibernate.show_sql=true
+                  hibernate.format_sql=true
+              </value>
+        </property>
+      </bean>
+
+    <bean id="transactionManager" class="org.springframework.orm.hibernate4.HibernateTransactionManager">
+        <property name="sessionFactory" ref="sessionFactory"/>
+    </bean>
+  
+    <bean id="transactionTemplate" class="org.springframework.transaction.support.TransactionTemplate">
+        <property name="transactionManager" ref="transactionManager"/>
+    </bean>
+    
+    <bean id="entityManagerFactory"
+          class="org.springframework.orm.jpa.LocalContainerEntityManagerFactoryBean">
+        <property name="dataSource" ref="dataSource" />
+
+    </bean>
+    
+    <bean id="accountDetailsManager"
+          class="rest.service.foreign.manager.AccountDetailsManagerImpl">
+        <constructor-arg value="tls-test.scnetservices.ru" />
+        <constructor-arg value="9000" />
+        <constructor-arg value="10" />
+    </bean>
+    
+    <bean id="securityAbstractFactory"
+          class="rest.service.hibernate.factory.SecurityAbstractFactoryImpl">
+        <constructor-arg ref="entityManagerFactory" />
+        <constructor-arg ref="accountDetailsManager" />
+    </bean>
+    
+    <bean id="clientDetails" class="rest.service.oauth.service.ClientDetailsServiceImpl">
+        <property name="id" value="admin" />
+        <property name="secretKey" value="admin" />
+    </bean>
+    
+    <bean id="customUserAuthenticationProvider"
+          class="rest.service.oauth.provider.UserAuthenticationProviderImpl">
+        <property name="login" value="admin" />
+        <property name="password" value="admin" />
+        <property name="securityAbstractFactory" ref="securityAbstractFactory" />
+    </bean>
+    
+    <bean id="clientDetailsUserService"
+          class="org.springframework.security.oauth2.provider.client.ClientDetailsUserDetailsService">
+        <constructor-arg ref="clientDetails" />
+    </bean>
+    
+    <sec:authentication-manager alias="authenticationManager">
+        <sec:authentication-provider user-service-ref="clientDetailsUserService" />
+    </sec:authentication-manager>
+    
+    <bean id="clientCredentialsTokenEndpointFilter"
+          class="org.springframework.security.oauth2.provider.client.ClientCredentialsTokenEndpointFilter">
+        <property name="authenticationManager" ref="authenticationManager" />
+    </bean>
+    
+    <bean id="oauthAccessDeniedHandler"
+          class="org.springframework.security.oauth2.provider.error.OAuth2AccessDeniedHandler">
+    </bean>
+    
+    <bean id="clientAuthenticationEntryPoint"
+          class="org.springframework.security.oauth2.provider.error.OAuth2AuthenticationEntryPoint">
+        <property name="realmName" value="springsec/client" />
+        <property name="typeName" value="Basic" />
+    </bean>
+    
+    <bean id="oauthAuthenticationEntryPoint"
+          class="org.springframework.security.oauth2.provider.error.OAuth2AuthenticationEntryPoint">
+    </bean>
+    
+    <sec:authentication-manager id="userAuthenticationManager">
+        <sec:authentication-provider ref="customUserAuthenticationProvider" />
+    </sec:authentication-manager>
+    
+    <bean id="tokenStore"
+        class="org.springframework.security.oauth2.provider.token.store.InMemoryTokenStore" />
+        
+    <bean id="tokenServices"
+          class="org.springframework.security.oauth2.provider.token.DefaultTokenServices">
+        <property name="tokenStore" ref="tokenStore" />
+        <property name="supportRefreshToken" value="true" />
+        <property name="accessTokenValiditySeconds" value="120"></property>
+        <property name="clientDetailsService" ref="clientDetails" />
+    </bean>
+    
+    <sec:http pattern="/oauth/token" create-session="stateless"
+          authentication-manager-ref="authenticationManager"> 
+        <sec:intercept-url pattern="/oauth/token" access="IS_AUTHENTICATED_FULLY" />
+        <sec:anonymous enabled="false" />
+        <sec:http-basic entry-point-ref="clientAuthenticationEntryPoint" />
+        <sec:custom-filter ref="clientCredentialsTokenEndpointFilter" before="BASIC_AUTH_FILTER" /> 
+        <sec:access-denied-handler ref="oauthAccessDeniedHandler" />
+    </sec:http>
+    
+    <sec:http 
+          auto-config="true"
+          access-denied-page="/login.jsp?authorization_error=true" 
+          disable-url-rewriting="true"
+          authentication-manager-ref="userAuthenticationManager">
+        <sec:intercept-url pattern="/oauth/**" access="ROLE_USER" />
+        <sec:intercept-url pattern="/accounts/**" access="ROLE_USER" />
+        <sec:intercept-url pattern="/**" access="IS_AUTHENTICATED_ANONYMOUSLY" />
+
+        <sec:form-login 
+              authentication-failure-url="/login.jsp?authentication_error=true"
+              login-page="/login.jsp"
+              login-processing-url="/login.do" /> 
+          
+        <sec:http-basic entry-point-ref="clientAuthenticationEntryPoint" />
+        
+    </sec:http>
+    
+    <oauth:authorization-server
+          client-details-service-ref="clientDetails" token-services-ref="tokenServices">
+        <oauth:authorization-code />
+        <oauth:implicit/>
+        <oauth:refresh-token/>
+        <oauth:client-credentials />
+        <oauth:password authentication-manager-ref="userAuthenticationManager"/>
+    </oauth:authorization-server>
+ 
+    <oauth:resource-server 
+          id="resourceServerFilter"
+          resource-id="springsec" token-services-ref="tokenServices" />
+
+    <mvc:annotation-driven />
+    <mvc:default-servlet-handler />
+    <context:annotation-config/>
+         
+</beans>
